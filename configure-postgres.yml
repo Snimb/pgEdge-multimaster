@@ -1,0 +1,80 @@
+#
+# Copyright: © 2024 itm8 a/s All rights reserved.
+#
+# Date     Version  By
+# 20240624 00.01    peter.gram@itm8.com
+#
+
+- hosts: all
+  vars:
+    setup_failed: false
+  tasks:
+#
+# Create the primary postgres cluster
+#
+    - name: Block for PostgreSQL cluster configuration
+      block:
+        - name: configure-postgres.yml
+          ansible.builtin.debug:
+            msg: "Starting PostgreSQL cluster configuration"
+#
+# Configure the primary cluster with cluster parameters
+#
+        - name: Set database parameters
+          ansible.builtin.command:
+            cmd: "{{ pgbin }}/psql -c \"{{ item }}\""
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ pguser }}"
+          when: inventory_hostname in groups["db_primary"]
+          tags:
+            - set_database_parameters
+          with_items:
+            - "{{ database_parameters }}"
+
+        - name: Set pgtune parameters
+          ansible.builtin.command:
+            cmd: "{{ pgbin }}/psql -c \"{{ item }}\""
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ pguser }}"
+          when: inventory_hostname in groups["db_primary"]
+          tags:
+            - set_pgtune_parameters
+          with_items:
+            - "{{ pgtune_parameters }}"
+
+        - name: Restart cluster on primary
+          ansible.builtin.command:
+            cmd: "{{ pgbin }}/pg_ctl restart --pgdata={{ pgdata }}"
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ pguser }}"
+          when: inventory_hostname in groups["db_primary"]
+          tags:
+            - restart_cluster_on_primary
+
+      rescue:
+        - name: Mark setup as failed
+          set_fact:
+            setup_failed: true
+
+        - name: Log error message
+          ansible.builtin.debug:
+            msg: "Setup failed. Stopping playbook execution."
+
+        - name: End play due to failure
+          meta: end_play
+          when: setup_failed
+
+      always:
+        - name: Ensure the final state of PostgreSQL service
+          ansible.builtin.command: 
+            cmd: "{{ pgbin }}/pg_ctl status --pgdata={{ pgdata }}"
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ pguser }}"
+          register: postgresql_status
+
+        - debug:
+            var: postgresql_status.stdout

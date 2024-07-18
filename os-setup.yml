@@ -14,10 +14,240 @@
   vars:
     setup_failed: false
     sar_tasks_changed: false
+    selinux_changed: false
   tasks:
-    - name: Setup block with rollback
+    - name: Block for OS-Setup
       block:
-    #
-    # Setup O/S
-    #
-    
+        - name: Check current SELinux mode
+          ansible.builtin.command: getenforce
+          become: true
+          become_method: ansible.builtin.sudo
+          register: current_selinux_mode
+
+        - name: Debug current SELinux mode
+          debug:
+            var: current_selinux_mode.stdout
+
+        - name: Check SELinux configuration file
+          ansible.builtin.command: grep '^SELINUX=' /etc/selinux/config
+          become: true
+          become_method: ansible.builtin.sudo
+          register: current_selinux_config
+
+        - name: Debug current SELinux configuration
+          debug:
+            var: current_selinux_config.stdout
+
+        - name: Add db_primary to hosts
+          ansible.builtin.lineinfile:
+            path: "/etc/hosts"
+            search_string: "{{ n1_ip }}"
+            line: "{{ n1_ip }} {{ n1_name }}"
+            owner: root
+            group: root
+            mode: "0644"
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - add_db_primary_to_hosts
+
+        - name: Add db_standby to hosts
+          ansible.builtin.lineinfile:
+            path: "/etc/hosts"
+            search_string: "{{ n2_ip }}"
+            line: "{{ n2_ip }} {{ n2_name }}"
+            owner: root
+            group: root
+            mode: "0644"
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - add_db_standby_to_hosts
+
+        - name: Install chrony package
+          ansible.builtin.package:
+            name: chrony
+            state: present
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_chronyd
+
+        - name: Ensure chronyd service is enabled and started
+          ansible.builtin.service:
+            name: chronyd
+            enabled: true
+            state: started
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - start_chronyd
+
+        - name: Set timezone to Copenhagen
+          community.general.timezone:
+            name: Europe/Copenhagen
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - set_location
+
+        - name: Package mutt
+          ansible.builtin.package:
+            name: mutt
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_mutt
+
+        - name: Install pip
+          ansible.builtin.command:
+            cmd: dnf install -y pip
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_pip
+
+        - name: Install psycopg
+          ansible.builtin.command:
+            cmd: pip install psycopg
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_psycopg
+
+        - name: Install psycopg-binary
+          ansible.builtin.command:
+            cmd: pip install psycopg-binary
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_psycopg_binary
+
+        - name: Sysstat package
+          ansible.builtin.package:
+            name: sysstat
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_sysstat
+
+        - name: Add sar run every sec
+          ansible.builtin.lineinfile:
+            path: /etc/cron.d/sysstat
+            line: "* * * * * root /usr/lib64/sa/sa1 1 60"
+            create: true
+            owner: root
+            mode: "644"
+            state: present
+          become: true
+          become_method: ansible.builtin.sudo
+          register: sar_run_crontab_result
+          tags:
+            - sar_run_crontab
+
+        - name: Add sar end of day
+          ansible.builtin.lineinfile:
+            path: /etc/cron.d/sysstat
+            line: "53 23 * * * root /usr/lib64/sa/sa2 -A"
+            create: true
+            owner: root
+            mode: "644"
+            state: present
+          become: true
+          become_method: ansible.builtin.sudo
+          register: sar_end_of_day_result
+          tags:
+            - sar_end_of_day
+
+        - name: Set sar tasks change fact
+          set_fact:
+            sar_tasks_changed: "{{ sar_run_crontab_result.changed or sar_end_of_day_result.changed }}"
+          when: sar_run_crontab_result is defined or sar_end_of_day_result is defined
+
+        - name: Restart sysstat service if sar tasks changed
+          ansible.builtin.service:
+            name: sysstat
+            enabled: true
+            state: restarted
+          become: true
+          become_method: ansible.builtin.sudo
+          when: sar_tasks_changed
+          tags:
+            - sar_restart
+
+        - name: Set SELinux to permissive mode
+          ansible.builtin.command: setenforce 0
+          become: true
+          become_method: ansible.builtin.sudo
+          register: selinux_enforce_result
+          changed_when: current_selinux_mode.stdout != "Permissive"
+          tags:
+            - set_selinux_permissive
+
+        - name: Ensure SELinux is set to permissive in config
+          ansible.builtin.lineinfile:
+            path: /etc/selinux/config
+            regexp: '^SELINUX='
+            line: 'SELINUX=permissive'
+          become: true
+          become_method: ansible.builtin.sudo
+          register: selinux_config_result
+          changed_when: "'SELINUX=permissive' not in current_selinux_config.stdout"
+          tags:
+            - set_selinux_config
+
+        - name: Set SELinux change fact
+          set_fact:
+            selinux_changed: "{{ selinux_enforce_result.changed or selinux_config_result.changed }}"
+          when: selinux_enforce_result is defined or selinux_config_result is defined
+
+        - name: Open firewall ports for pgEdge
+          ansible.posix.firewalld:
+            port: 5432/tcp
+            permanent: true
+            state: enabled
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - open_firewall_ports
+
+        - name: Reboot the system if SELinux changed
+          ansible.builtin.reboot:
+          become: true
+          become_method: ansible.builtin.sudo
+          when: selinux_changed
+          tags:
+            - reboot_system
+
+      rescue:
+        - name: Mark setup as failed
+          set_fact:
+            setup_failed: true
+
+        - name: Log error message
+          ansible.builtin.debug:
+            msg: "Setup failed. Stopping playbook execution."
+
+        - name: End play due to failure
+          meta: end_play
+          when: setup_failed
+
+      always:
+        - name: Ensure hosts file is in correct state
+          ansible.builtin.command: cat /etc/hosts
+          become: true
+          become_method: ansible.builtin.sudo
+          register: hosts_file_content
+
+        - debug:
+            var: hosts_file_content.stdout
+
+        - name: Check sysstat service status
+          ansible.builtin.command: systemctl status sysstat
+          become: true
+          become_method: ansible.builtin.sudo
+          register: sysstat_status
+
+        - name: Display sysstat service status
+          ansible.builtin.debug:
+            var: sysstat_status.stdout

@@ -5,18 +5,23 @@
 # 20240718 00.01    sinwi@itm8.com
 #
 
-[db_primary]
-ol941
+[db_n1]
+pgedge1
 
-[db_standby]
-ol942
+[db_n2]
+pgedge2
 
 [db:children]
-db_primary
-db_standby
+db_n1
+db_n2
 
 [db:vars]
-db_primary_ip=192.168.56.109
-db_primary_name=ol941
-db_standby_ip=192.168.56.110
-db_standby_name=ol942
+n1_ip=192.168.56.112
+n1_name=pgedge1
+n2_ip=192.168.56.111
+n2_name=pgedge2
+pgedge_db=acctg
+non_root_replication_user=sinwi
+db_superuser=admin
+port=5432
+repset=default

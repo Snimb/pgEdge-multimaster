@@ -1,0 +1,217 @@
+# Copyright: © 2024 itm8 a/s All rights reserved.
+#
+# Date     Version  By
+# 20240718 00.01    sinwi@itm8.com
+#
+
+- hosts: all
+  vars:
+    setup_failed: false
+  tasks:
+    #
+    # Install postgres and configure pgEdge cluster
+    #
+    - name: Block for Postgres and pgEdge installation
+      block:
+        - name: Check if pgedge directory exists
+          ansible.builtin.stat:
+            path: /home/{{ non_root_replication_user }}/pgedge
+          register: pgedge_dir
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_pgedge
+
+        - name: Remove pgedge directory if it exists
+          ansible.builtin.file:
+            path: /home/{{ non_root_replication_user }}/pgedge
+            state: absent
+          when: pgedge_dir.stat.exists
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_pgedge
+
+        - name: Download pgEdge install script
+          ansible.builtin.get_url:
+            url: https://pgedge-download.s3.amazonaws.com/REPO/install.py
+            dest: /tmp/install.py
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - install_pgedge
+
+        - name: Run pgEdge install script as non-root user
+          ansible.builtin.command:
+            cmd: python3 /tmp/install.py
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          tags:
+            - install_pgedge
+
+        - name: Run pgEdge setup as non-root user with different PostgreSQL superuser
+          ansible.builtin.command:
+            cmd: ./pgedge setup -U {{ db_superuser }} -P {{ db_superuser_password }} -d {{ pgedge_db }}
+            chdir: /home/{{ non_root_replication_user }}/pgedge 
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          tags:
+            - setup_pgedge
+
+        - name: Create node n1
+          ansible.builtin.command:
+            cmd: ./pgedge spock node-create n1 'host={{ n1_ip }} user={{ non_root_replication_user }} dbname={{ pgedge_db }}' {{ pgedge_db }}
+            chdir: /home/{{ non_root_replication_user }}/pgedge 
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n1"])
+          tags:
+            - create_node_n1
+
+        - name: Create node n2
+          ansible.builtin.command:
+            cmd: ./pgedge spock node-create n2 'host={{ n2_ip }} user={{ non_root_replication_user }} dbname={{ pgedge_db }}' {{ pgedge_db }}
+            chdir: /home/{{ non_root_replication_user }}/pgedge  
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n2"])
+          tags:
+            - create_node_n2
+
+        - name: Create subscription sub_n1n2 on n1
+          ansible.builtin.command:
+            cmd: ./pgedge spock sub-create sub_n1n2 'host={{ n2_ip }} port={{ port }} user={{ non_root_replication_user }} dbname={{ pgedge_db }}' {{ pgedge_db }}
+            chdir: /home/{{ non_root_replication_user }}/pgedge  
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n1"])
+          tags:
+            - create_sub_n1n2
+
+        - name: Create subscription sub_n2n1 on n2
+          ansible.builtin.command:
+            cmd: ./pgedge spock sub-create sub_n2n1 'host={{ n1_ip }} port={{ port }} user={{ non_root_replication_user }} dbname={{ pgedge_db }}' {{ pgedge_db }}
+            chdir: /home/{{ non_root_replication_user }}/pgedge  
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n2"])
+          tags:
+            - create_sub_n2n1
+
+        - name: Source PostgreSQL environment variables
+          ansible.builtin.shell: |
+            source /home/{{ non_root_replication_user }}/pgedge/pg16/pg16.env
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          tags:
+            - source_pg_env
+
+        - name: Ensure pg16.env is sourced in .bash_profile
+          ansible.builtin.lineinfile:
+            path: /home/{{ non_root_replication_user }}/.bash_profile
+            regexp: '^source /home/{{ non_root_replication_user }}/pgedge/pg16/pg16.env'
+            line: 'source /home/{{ non_root_replication_user }}/pgedge/pg16/pg16.env'
+            insertafter: EOF
+            owner: "{{ non_root_replication_user }}"
+            group: "{{ non_root_replication_user }}"
+            mode: '0644'
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - source_pg_env_bash_profile
+
+        - name: Initialize pgbench tables on n1
+          ansible.builtin.shell: |
+            source /home/{{ non_root_replication_user }}/pgedge/pg16/pg16.env && pgbench -i {{ pgedge_db }}
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n1"])
+          tags:
+            - initialize_pgbench_n1
+
+        - name: Initialize pgbench tables on n2
+          ansible.builtin.shell: |
+            source /home/{{ non_root_replication_user }}/pgedge/pg16/pg16.env && pgbench -i {{ pgedge_db }}
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n2"])
+          tags:
+            - initialize_pgbench_n2
+
+        - name: Alter pgbench tables on n1
+          ansible.builtin.shell: |
+            source /home/{{ non_root_replication_user }}/pgedge/pg16/pg16.env && \
+            psql {{ pgedge_db }} -c "ALTER TABLE pgbench_accounts ALTER COLUMN abalance SET (LOG_OLD_VALUE=true);" && \
+            psql {{ pgedge_db }} -c "ALTER TABLE pgbench_branches ALTER COLUMN bbalance SET (LOG_OLD_VALUE=true);" && \
+            psql {{ pgedge_db }} -c "ALTER TABLE pgbench_tellers ALTER COLUMN tbalance SET (LOG_OLD_VALUE=true);"
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n1"])
+          tags:
+            - alter_pgbench_tables_n1
+
+        - name: Alter pgbench tables on n2
+          ansible.builtin.shell: |
+            source /home/{{ non_root_replication_user }}/pgedge/pg16/pg16.env && \
+            psql {{ pgedge_db }} -c "ALTER TABLE pgbench_accounts ALTER COLUMN abalance SET (LOG_OLD_VALUE=true);" && \
+            psql {{ pgedge_db }} -c "ALTER TABLE pgbench_branches ALTER COLUMN bbalance SET (LOG_OLD_VALUE=true);" && \
+            psql {{ pgedge_db }} -c "ALTER TABLE pgbench_tellers ALTER COLUMN tbalance SET (LOG_OLD_VALUE=true);"
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n2"])
+          tags:
+            - alter_pgbench_tables_n2
+
+
+        - name: Add tables to replication set on n1
+          ansible.builtin.command:
+            cmd: ./pgedge spock repset-add-table {{ repset }} 'pgbench_*' {{ pgedge_db }}
+            chdir: /home/{{ non_root_replication_user }}/pgedge  
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n1"])
+          tags:
+            - add_tables_n1
+
+        - name: Add tables to replication set on n2
+          ansible.builtin.command:
+            cmd: ./pgedge spock repset-add-table {{ repset }} 'pgbench_*' {{ pgedge_db }}
+            chdir: /home/{{ non_root_replication_user }}/pgedge  
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: (inventory_hostname in groups["db_n2"])
+          tags:
+            - add_tables_n2
+
+      rescue:
+        - name: Mark setup as failed
+          set_fact:
+            setup_failed: true
+
+        - name: Log error message
+          ansible.builtin.debug:
+            msg: "Setup failed. Stopping playbook execution."
+
+        - name: End play due to failure
+          meta: end_play
+          when: setup_failed
+
+      always:
+        - name: Ensure setup was successful
+          ansible.builtin.command: echo "Setup completed successfully"
+          when: not setup_failed
+          tags:
+            - success_message
