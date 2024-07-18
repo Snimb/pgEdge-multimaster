@@ -1,0 +1,10 @@
+#
+# Copyright: © 2024 itm8 a/s All rights reserved.
+#
+# Date     Version  By
+# 20240718 00.01    sinwi@itm8.com
+#
+
+- ansible.builtin.import_playbook: os-setup.yml
+- ansible.builtin.import_playbook: install-pgedge.yml
+- ansible.builtin.import_playbook: configure-postgres.yml

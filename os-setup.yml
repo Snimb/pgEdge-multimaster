@@ -1,0 +1,23 @@
+#
+# Copyright: © 2024 itm8 a/s All rights reserved.
+#
+# Date     Version  By
+# 20240718 00.01    sinwi@itm8.com
+#
+#
+# Copyright: © 2024 itm8 a/s All rights reserved.
+#
+# Date     Version  By
+# 20240718 00.01    sinwi@itm8.com
+#
+- hosts: all
+  vars:
+    setup_failed: false
+    sar_tasks_changed: false
+  tasks:
+    - name: Setup block with rollback
+      block:
+    #
+    # Setup O/S
+    #
+    

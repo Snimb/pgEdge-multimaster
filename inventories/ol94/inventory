@@ -1,0 +1,22 @@
+#
+# Copyright: © 2024 itm8 a/s All rights reserved.
+#
+# Date     Version  By
+# 20240718 00.01    sinwi@itm8.com
+#
+
+[db_primary]
+ol941
+
+[db_standby]
+ol942
+
+[db:children]
+db_primary
+db_standby
+
+[db:vars]
+db_primary_ip=192.168.56.109
+db_primary_name=ol941
+db_standby_ip=192.168.56.110
+db_standby_name=ol942
