@@ -26,7 +26,6 @@
           become: true
           become_method: ansible.builtin.sudo
           become_user: "{{ pguser }}"
-          when: inventory_hostname in groups["db_primary"]
           tags:
             - set_database_parameters
           with_items:
@@ -38,7 +37,6 @@
           become: true
           become_method: ansible.builtin.sudo
           become_user: "{{ pguser }}"
-          when: inventory_hostname in groups["db_primary"]
           tags:
             - set_pgtune_parameters
           with_items:
@@ -50,7 +48,6 @@
           become: true
           become_method: ansible.builtin.sudo
           become_user: "{{ pguser }}"
-          when: inventory_hostname in groups["db_primary"]
           tags:
             - restart_cluster_on_primary
 

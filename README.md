@@ -7,13 +7,6 @@
 ``` bash
 echo "<your_user> ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/<your_user> >/dev/null
 ```
-- Configuring Passwordless SSH on both servers: 
-``` bash
-ssh-keygen -t rsa
-cd ~/.ssh
-cat id_rsa.pub >> authorized_keys
-chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
-```
 
 ### Ansible Requirements
 
@@ -32,6 +25,7 @@ ansible [core 2.14.14] <br />
 ansible-galaxy collection list
 ```
 Collection           Version <br />
+ansible.posix        1.5.4 <br />
 community.general    9.1.0 <br />
 community.postgresql 3.4.1 <br />
 

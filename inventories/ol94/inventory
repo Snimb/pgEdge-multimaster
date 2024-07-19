@@ -25,3 +25,6 @@ non_root_replication_user=sinwi
 db_superuser=admin
 port=5432
 repset=default
+pgbin=pgedge/pg16/bin/
+pgdata=pgedge/data/pg16
+pgcluster=pgedge-prod

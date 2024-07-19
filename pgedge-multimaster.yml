@@ -7,4 +7,4 @@
 
 - ansible.builtin.import_playbook: os-setup.yml
 - ansible.builtin.import_playbook: install-pgedge.yml
-# - ansible.builtin.import_playbook: configure-postgres.yml
+- ansible.builtin.import_playbook: configure-postgres.yml

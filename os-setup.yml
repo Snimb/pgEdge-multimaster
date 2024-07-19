@@ -211,6 +211,45 @@
           tags:
             - open_firewall_ports
 
+        - name: Generate SSH key pair
+          ansible.builtin.command: ssh-keygen -t rsa -f ~/.ssh/id_rsa -N ''
+          become: true
+          become_method: ansible.builtin.sudo
+          args:
+            creates: ~/.ssh/id_rsa
+          tags:
+            - generate_ssh_keys
+
+        - name: Ensure .ssh directory exists
+          ansible.builtin.file:
+            path: ~/.ssh
+            state: directory
+            mode: '0700'
+            owner: root
+            group: root
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - ensure_ssh_directory
+
+        - name: Add SSH public key to authorized_keys
+          ansible.builtin.shell: cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - add_ssh_key_to_authorized_keys
+
+        - name: Set permissions on authorized_keys
+          ansible.builtin.file:
+            path: ~/.ssh/authorized_keys
+            mode: '0600'
+            owner: root
+            group: root
+          become: true
+          become_method: ansible.builtin.sudo
+          tags:
+            - set_authorized_keys_permissions
+
         - name: Reboot the system if SELinux changed
           ansible.builtin.reboot:
           become: true

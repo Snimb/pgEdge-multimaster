@@ -10,6 +10,9 @@ database_parameters:
   - "ALTER SYSTEM SET track_functions='all';"
   - "ALTER SYSTEM SET track_wal_io_timing=on;"
   - "ALTER SYSTEM SET cluster_name='{{ pgcluster }}';"
+  - "ALTER SYSTEM SET spock.enable_ddl_replication=on;"
+  - "ALTER SYSTEM SET spock.include_ddl_repset=on;"
+  - "ALTER SYSTEM SET spock.allow_ddl_from_functions=on;"
 
 pgtune_parameters :
   - "ALTER SYSTEM SET max_connections='40';"

@@ -50,6 +50,11 @@
           tags:
             - install_pgedge
 
+        - name: Check if pgEdge is already set up
+          stat:
+            path: /home/{{ non_root_replication_user }}/pgedge/pgsetup_done
+          register: pgedge_setup
+
         - name: Run pgEdge setup as non-root user with different PostgreSQL superuser
           ansible.builtin.command:
             cmd: ./pgedge setup -U {{ db_superuser }} -P {{ db_superuser_password }} -d {{ pgedge_db }}
@@ -57,6 +62,18 @@
           become: true
           become_method: ansible.builtin.sudo
           become_user: "{{ non_root_replication_user }}"
+          when: not pgedge_setup.stat.exists
+          tags:
+            - setup_pgedge
+
+        - name: Create pgsetup_done file
+          file:
+            path: /home/{{ non_root_replication_user }}/pgedge/pgsetup_done
+            state: touch
+          become: true
+          become_method: ansible.builtin.sudo
+          become_user: "{{ non_root_replication_user }}"
+          when: not pgedge_setup.stat.exists
           tags:
             - setup_pgedge
 
